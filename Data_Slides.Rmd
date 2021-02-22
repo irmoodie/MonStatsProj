@@ -1,0 +1,167 @@
+---
+title: "Effect of competition on a threatened species"
+subtitle: "*Centaurea Corymbosa*"
+author: "D. Groffman, I. Moodie, B. Shahid"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(reshape2)
+data <- read_tsv("donnees_centauree.csv")
+
+```
+
+## Study species
+
+*Centaurea corymbosa* is an endemic plant species of La Clape, an region in Southern France.
+
+It is closely related to other *Centaurea* species found in the region, but unlike *C. corymbosa*, these are very abundant.
+
+```{r, echo=FALSE, out.width = '50%', fig.align='center', fig.cap="*C. corymbosa*"}
+   knitr::include_graphics("Data_Slides_Figs/corymbosa.jfif")
+
+```
+
+## Our question
+
+Is *Centaurea corymbosa* threatened because it is not as competitive as other *Centaurea* species?
+
+## The experiment (1/2)
+
+- Seeds of two *Centaurea* species were collected from **four** populations, **two** with only *C. corymbosa* present and **two** with only *C. maculosa* present.
+- Seeds were sown one per pot.
+- Competition was induced by growing *Brachypodium ramosum* in the pots, but at different densities:
+  - Control: no *B. ramosum*
+  - Not dense: *B. ramosum* covers **10%** of the surface area of the pot
+  - Dense: *B. ramosum* covers **between 10 and 50%** of the surface area of the pot
+  - Very dense: *B. ramosum* covers **more than 50%** of the surface area of the pot
+  
+## The experiment (2/2)
+
+For each treatment, **50 replicates** were seeded for **each population** and **each species**, for a **total of 800 seeds** monitored at different time intervals: each week for 3 weeks, and then once per month*.
+
+|            | C.c. (Pop1)            | C.c. (Pop2)            | C.m. (Pop3)            | C.m. (Pop4)            |
+| ---------- | ---------------------- | ---------------------- | ---------------------- | ---------------------- |
+| Control    | C.c. (Pop1)/Control    | C.c. (Pop2)/Control    | C.m. (Pop3)/Control    | C.m. (Pop4)/Control    |
+| Not Dense  | C.c. (Pop1)/Not Dense  | C.c. (Pop2)/Not Dense  | C.m. (Pop3)/Not Dense  | C.m. (Pop4)/Not Dense  |
+| Dense      | C.c. (Pop1)/Dense      | C.c. (Pop2)/Dense      | C.m. (Pop3)/Dense      | C.m. (Pop4)/Dense      |
+| Very Dense | C.c. (Pop1)/Very Dense | C.c. (Pop2)/Very Dense | C.m. (Pop3)/Very Dense | C.m. (Pop4)/Very Dense |
+
+## The dataset (1/2)
+
+- *Plante*: number of the seed/plant (1 to 800)
+- *Espece*: species (mac, C. maculosa, cor, C. corymbosa)
+- *Pop*: population names
+- *Traitement*: treatment factor
+- *PAR*: quantity of light received by a pot, which depends on the percentage of soil covers ; it is 100% in control pots
+- *Reference*: quantity of light received by a pot where it is not covered. it is 100% in control pots 
+
+## The dataset (2/2)
+
+- *Date_de_germination*: germination date; missing data if the seed did not germinate 
+- *Cotyledons*: size of the emerged seedling
+- *Taille_Dec_05*: size of the rosette in December 2005
+- *Taille_Fev_06*: size of the rosette in Feburary 2006
+- *Taille_Mars_06*: size of the rosette in March 2006
+- *Taille_Juin_06*: size of the rosette in June 2006
+- *Taille_Sept_06*: size of the rosette in September 2006
+
+## Data cleaning (1/n)
+
+```{r, cleaning, echo=TRUE, include=TRUE}
+
+# Format the date of germination correctly
+data$Date_de_germination <- as.Date(data$Date_de_germination,
+                                    format = "%d/%m/%Y")
+
+head(data[1:3,1:5])
+
+```
+
+1st decision - We are not interested in the rosette size of plants that do not germinate, so set to NA
+
+## Data cleaning (2/n)
+
+```{r, cleaning2, echo=TRUE, include=TRUE}
+
+# If plant didn't germinate, it should not have a rosette size
+data_nogerm <- data %>%
+  filter(is.na(Date_de_germination)) %>%
+  mutate(Taille_Dec_05 = NA,
+         Taille_Fev_06 = NA,
+         Taille_Mars_06 = NA,
+         Taille_Juin_06 = NA,
+         Taille_Sept_06 = NA)
+
+data_germ <- data %>%
+  filter(!is.na(Date_de_germination))
+
+fulldata <- full_join(data_nogerm, data_germ)
+```
+
+## Data cleaning (3/n)
+
+2nd decision: We are interested in the size of the rosette over time, as this will be our indication of how well each plant is coping with the competition.
+
+```{r, cleaning3, echo=TRUE, include=TRUE}
+
+gathered_data <- fulldata %>%
+  rename("2005-12-01" = "Taille_Dec_05",
+         "2006-02-01" = "Taille_Fev_06",
+         "2006-03-01" = "Taille_Mars_06",
+         "2006-06-01" = "Taille_Juin_06",
+         "2006-09-01" = "Taille_Sept_06") %>%
+  gather(key = "Date", 
+         value = "Rosette_size", 
+         "2005-12-01":"2006-09-01")
+
+gathered_data$Date <- as.Date(gathered_data$Date, format = "%Y-%m-%d")
+
+```
+
+## Data cleaning (4/n)
+
+3rd decision: To make sense of the light data, we divide the PAR received by the plant through the *Brachypodium* by the max PAR that pot was receiving (actual/max possible). As the max values were taken for areas within the greenhouse (presumed), not each pot, some values of actual/max are slightly above 1.
+```{r, cleaning4, echo=TRUE, include=TRUE}
+gathered_data <- gathered_data %>%
+  mutate(light = PAR/reference)
+```
+
+## Data exploration (1/n)
+
+```{r, explore1, echo=FALSE, include=TRUE, warning = FALSE, fig.align='center'}
+ggplot(gathered_data, aes(x = traitement, y = light)) +
+  geom_jitter(alpha = 0.3)
+
+```
+
+Is light received (actual PAR / Max PAR) perhaps a better measure of competition than the visual sorting of % soil covered?
+
+## Data exploration (2/n)
+
+```{r, explore2, echo=FALSE, include=TRUE, warning = FALSE, fig.align='center'}
+
+ggplot(gathered_data, aes(x = Date, y = Rosette_size)) +
+  geom_jitter(alpha = 0.3) +
+  facet_grid(~traitement) +
+  scale_x_continuous(breaks = as.numeric(gathered_data$Date),
+                     labels = format(gathered_data$Date, format = "%b")) +
+  theme(axis.text.x = element_text(angle = 90))
+  
+```
+
+Something is weird: lack of 0s in the June measurements
+
+## Data exploration (3/n)
+
+```{r, explore3, echo=FALSE, include=TRUE, warning = FALSE}
+
+ggplot(gathered_data, aes(x = light, y = Rosette_size)) +
+  geom_jitter(alpha = 0.3) +
+  facet_grid(~Date)
+
+```
+
