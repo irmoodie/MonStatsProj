@@ -1,0 +1,154 @@
+---
+title: "Text holding"
+author: "IR Moodie"
+date: "23/02/2021"
+output: ioslides_presentation
+---
+
+## Data cleaning (3/n)
+
+1st decision - We are not interested in the rosette size of plants that do not germinate, so set to NA
+
+```{r, cleaning2, echo=TRUE, include=TRUE, results='hide'}
+
+# If plant didn't germinate, it should not have a rosette size
+data_nogerm <- data %>%
+  filter(is.na(Date_de_germination)) %>%
+  mutate(Taille_Dec_05 = NA,
+         Taille_Fev_06 = NA,
+         Taille_Mars_06 = NA,
+         Taille_Juin_06 = NA,
+         Taille_Sept_06 = NA) %>%
+  mutate(germ = 0)
+
+data_germ <- data %>%
+  filter(!is.na(Date_de_germination)) %>%
+  mutate(germ = 1)
+
+fulldata <- full_join(data_nogerm, data_germ)
+
+```
+
+Are we interested in the rosette size of a plant that is yet to germinate?
+
+## Data cleaning (4/n)
+
+2nd decision: We are interested in the size of the rosette over time, as this will be our indication of how well each plant is coping with the competition.
+
+```{r, cleaning3, echo=TRUE, include=TRUE, results='hide'}
+
+gathered_data <- fulldata %>%
+  rename("2005-12-01" = "Taille_Dec_05",
+         "2006-02-01" = "Taille_Fev_06",
+         "2006-03-01" = "Taille_Mars_06",
+         "2006-06-01" = "Taille_Juin_06",
+         "2006-09-01" = "Taille_Sept_06") %>%
+  gather(key = "Date", 
+         value = "Rosette_size", 
+         "2005-12-01":"2006-09-01")
+
+gathered_data$Date <- as.Date(gathered_data$Date, format = "%Y-%m-%d")
+
+```
+
+## Data cleaning (4/n)
+
+3rd decision: To make sense of the light data, we divide the PAR received by the plant through the *Brachypodium* by the max PAR that pot was receiving (actual/max possible). As the max values were taken for areas within the greenhouse (presumed), not each pot, some values of actual/max are slightly above 1.
+```{r, cleaning4, echo=TRUE, include=TRUE}
+gathered_data <- gathered_data %>%
+  mutate(light = PAR/reference)
+```
+
+## Data exploration (1/n)
+
+```{r, explore1, echo=FALSE, include=TRUE, warning = FALSE, fig.align='center'}
+ggplot(gathered_data, aes(x = traitement, y = light)) +
+  geom_jitter(alpha = 0.3)
+
+```
+
+Is light received (actual PAR / Max PAR) perhaps a better measure of competition than the visual sorting of % soil covered?
+
+## Data exploration (2/n)
+
+```{r, explore2, echo=FALSE, include=TRUE, warning = FALSE, fig.align='center'}
+
+ggplot(gathered_data, aes(x = Date, y = Rosette_size)) +
+  geom_jitter(alpha = 0.3) +
+  facet_grid(~traitement) +
+  scale_x_continuous(breaks = as.numeric(gathered_data$Date),
+                     labels = format(gathered_data$Date, format = "%b")) +
+  theme(axis.text.x = element_text(angle = 90))
+  
+```
+
+Something is weird: lack of 0s in the June measurements
+
+## Data exploration (3/n)
+
+No zeros in June?
+
+```{r, explore3, echo=FALSE, include=TRUE, warning = FALSE, fig.align='center'}
+
+gathered_data %>%
+         filter(Plante == 58) %>%
+  ggplot(aes(x = Date, y = Rosette_size, shape = as.factor(Plante), colour = as.factor(Plante))) +
+  geom_point(size = 4, alpha = 0.3) +
+  geom_line() +
+  scale_x_continuous(breaks = as.numeric(gathered_data$Date),
+                     labels = format(gathered_data$Date, format = "%b")) +
+  theme(axis.text.x = element_text(angle = 90))
+
+```
+
+## TEST 2
+```{r, exploren, echo=FALSE, include=TRUE, warning = FALSE, fig.align='center'}
+
+ggplot(gathered_data, aes(x = Date, y = Rosette_size, group = Plante)) +
+  geom_line(alpha = 0.2) +
+  facet_grid(~traitement) +
+  scale_x_continuous(breaks = as.numeric(gathered_data$Date),
+                     labels = format(gathered_data$Date, format = "%b")) +
+  theme(axis.text.x = element_text(angle = 90))
+  
+
+```
+
+## Count
+```{r, germcount, echo=FALSE, include=TRUE, warning = FALSE, fig.align='center'}
+
+ggplot(fulldata, aes(x = traitement, fill = as.factor(germ))) +
+  geom_bar(position = "stack") +
+   theme(axis.text.x = element_text(angle = 90)) +
+  facet_grid(~espece+pop)
+
+ggplot(fulldata, aes(x = Date_de_germination, group = traitement, fill = traitement)) +
+  geom_histogram(binwidth = 10) +
+  #stat_ecdf(geom = "step", alpha = 0.5, size = 2) +
+  facet_grid(~espece+pop) +
+     theme(axis.text.x = element_text(angle = 90))
+
+```
+
+
+## TEST
+
+```{r, explorex, echo=FALSE, include=TRUE, warning = FALSE}
+
+ggplot(gathered_data, aes(x = light, y = Rosette_size)) +
+  geom_jitter(alpha = 0.3) +
+  facet_grid(~Date)
+
+```
+
+
+## TEST
+
+```{r, modelx, echo=FALSE, include=TRUE, warning = FALSE}
+
+lm1 <- lm(Rosette_size~espece, data = gathered_data)
+anova(lm1)
+summary(lm1)
+
+
+```

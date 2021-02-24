@@ -81,34 +81,12 @@ head(data[1:3,1:5])
 
 ```
 
-1st decision - We are not interested in the rosette size of plants that do not germinate, so set to NA
 
 ## Data cleaning (2/n)
 
-```{r, cleaning2, echo=TRUE, include=TRUE}
+```{r, warning=FALSE}
 
-# If plant didn't germinate, it should not have a rosette size
-data_nogerm <- data %>%
-  filter(is.na(Date_de_germination)) %>%
-  mutate(Taille_Dec_05 = NA,
-         Taille_Fev_06 = NA,
-         Taille_Mars_06 = NA,
-         Taille_Juin_06 = NA,
-         Taille_Sept_06 = NA)
-
-data_germ <- data %>%
-  filter(!is.na(Date_de_germination))
-
-fulldata <- full_join(data_nogerm, data_germ)
-```
-
-## Data cleaning (3/n)
-
-2nd decision: We are interested in the size of the rosette over time, as this will be our indication of how well each plant is coping with the competition.
-
-```{r, cleaning3, echo=TRUE, include=TRUE}
-
-gathered_data <- fulldata %>%
+gathered_data <- data %>%
   rename("2005-12-01" = "Taille_Dec_05",
          "2006-02-01" = "Taille_Fev_06",
          "2006-03-01" = "Taille_Mars_06",
@@ -119,6 +97,39 @@ gathered_data <- fulldata %>%
          "2005-12-01":"2006-09-01")
 
 gathered_data$Date <- as.Date(gathered_data$Date, format = "%Y-%m-%d")
+
+ggplot(gathered_data, aes(x = light, y = Rosette_size)) +
+  geom_jitter(alpha = 0.3) +
+  facet_grid(espece~Date) +
+#  scale_x_continuous(breaks = as.numeric(gathered_data$Date),
+ #                    labels = format(gathered_data$Date, format = "%b")) +
+  theme(axis.text.x = element_text(angle = 90))
+
+hist(gathered_data$Rosette_size)
+
+```
+
+## Data cleaning (3/n)
+
+1st decision - We are not interested in the rosette size of plants that do not germinate, so set to NA
+
+```{r, cleaning2, echo=TRUE, include=TRUE, results='hide'}
+
+# If plant didn't germinate, it should not have a rosette size
+data_nogerm <- data %>%
+  filter(is.na(Date_de_germination)) %>%
+  mutate(Taille_Dec_05 = NA,
+         Taille_Fev_06 = NA,
+         Taille_Mars_06 = NA,
+         Taille_Juin_06 = NA,
+         Taille_Sept_06 = NA) %>%
+  mutate(germ = 0)
+
+data_germ <- data %>%
+  filter(!is.na(Date_de_germination)) %>%
+  mutate(germ = 1)
+
+data_nogerm_na <- full_join(data_nogerm, data_germ)
 
 ```
 
@@ -137,31 +148,3 @@ ggplot(gathered_data, aes(x = traitement, y = light)) +
   geom_jitter(alpha = 0.3)
 
 ```
-
-Is light received (actual PAR / Max PAR) perhaps a better measure of competition than the visual sorting of % soil covered?
-
-## Data exploration (2/n)
-
-```{r, explore2, echo=FALSE, include=TRUE, warning = FALSE, fig.align='center'}
-
-ggplot(gathered_data, aes(x = Date, y = Rosette_size)) +
-  geom_jitter(alpha = 0.3) +
-  facet_grid(~traitement) +
-  scale_x_continuous(breaks = as.numeric(gathered_data$Date),
-                     labels = format(gathered_data$Date, format = "%b")) +
-  theme(axis.text.x = element_text(angle = 90))
-  
-```
-
-Something is weird: lack of 0s in the June measurements
-
-## Data exploration (3/n)
-
-```{r, explore3, echo=FALSE, include=TRUE, warning = FALSE}
-
-ggplot(gathered_data, aes(x = light, y = Rosette_size)) +
-  geom_jitter(alpha = 0.3) +
-  facet_grid(~Date)
-
-```
-
