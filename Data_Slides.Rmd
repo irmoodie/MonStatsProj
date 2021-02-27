@@ -10,6 +10,7 @@ output: ioslides_presentation
 knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(reshape2)
+library(cowplot)
 data <- read_tsv("donnees_centauree.csv")
 
 ```
@@ -98,14 +99,60 @@ gathered_data <- data %>%
 
 gathered_data$Date <- as.Date(gathered_data$Date, format = "%Y-%m-%d")
 
-ggplot(gathered_data, aes(x = light, y = Rosette_size)) +
-  geom_jitter(alpha = 0.3) +
+ggplot(gathered_data, aes(x = (1-light), y = Rosette_size, colour = pop)) +
+  geom_jitter(alpha = 0.3, size = 2) +
   facet_grid(espece~Date) +
-#  scale_x_continuous(breaks = as.numeric(gathered_data$Date),
- #                    labels = format(gathered_data$Date, format = "%b")) +
-  theme(axis.text.x = element_text(angle = 90))
+  labs(x = "1-PAR/ref (0 = max light recieved & min competition)",
+       y = "Rosette size") +
+  theme(axis.text.x = element_text(angle = 90)) +
+    theme(axis.text=element_text(size=12),
+        strip.text = element_text(size = 12),
+        axis.title=element_text(size=14,face="bold"))
+
+ggsave(filename = "x1minusParRef_yRosette_facSpecDate_GrpPop.png",
+       dpi = "retina",
+       height = 6,
+       width = 12)
+
+gathered_data$traitement <- factor(gathered_data$traitement,      # Reordering group factor levels
+                         levels = c("temoin", "peu", "mi", "dense"))
+
+ggplot(gathered_data, aes(x = Date, y = Rosette_size, colour = pop)) +
+  geom_jitter(alpha = 0.3, size = 2) +
+  facet_grid(espece~traitement) +
+  scale_x_continuous(breaks = as.numeric(gathered_data$Date),
+                     labels = format(gathered_data$Date, format = "%b")) +
+    theme(axis.text.x = element_text(angle = 90)) +
+    labs(y = "Rosette size") +
+  theme(axis.text=element_text(size=12),
+        strip.text = element_text(size = 12),
+        axis.title=element_text(size=14,face="bold"))
+
+ggsave(filename = "xDate_yRosette_facSpecTrait_GrpPop.png",
+       dpi = "retina",
+       height = 6,
+       width = 12)
+
+ggplot(gathered_data, aes(x = traitement, y = Rosette_size, colour = pop)) +
+  geom_jitter(alpha = 0.3, size = 2) +
+  facet_grid(espece~Date) +
+  #scale_x_continuous(breaks = as.numeric(gathered_data$Date),
+  #                   labels = format(gathered_data$Date, format = "%b")) +
+    theme(axis.text.x = element_text(angle = 90)) +
+    labs(y = "Rosette size") +
+  theme(axis.text=element_text(size=12),
+        strip.text = element_text(size = 12),
+        axis.title=element_text(size=14,face="bold"))
+
+ggsave(filename = "xTraitement_yRosette_facSpecDate_GrpPop.png",
+       dpi = "retina",
+       height = 6,
+       width = 12)
 
 hist(gathered_data$Rosette_size)
+
+#  scale_x_continuous(breaks = as.numeric(gathered_data$Date),
+ #                    labels = format(gathered_data$Date, format = "%b")) +
 
 ```
 
@@ -144,7 +191,15 @@ gathered_data <- gathered_data %>%
 ## Data exploration (1/n)
 
 ```{r, explore1, echo=FALSE, include=TRUE, warning = FALSE, fig.align='center'}
-ggplot(gathered_data, aes(x = traitement, y = light)) +
-  geom_jitter(alpha = 0.3)
+ggplot(gathered_data, aes(x = traitement, y = PAR/reference, colour = interaction(pop,espece))) +
+  geom_jitter(alpha = 0.3, size = 2) +
+  scale_y_continuous(breaks = c(0,0.25,0.5,0.75,1)) +
+    theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+
+ggsave(filename = "xTraitement_yParRef_GrpSpecPop.png",
+       dpi = "retina",
+       height = 7,
+       width = 9)
 
 ```
