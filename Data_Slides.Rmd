@@ -8,10 +8,7 @@ output: ioslides_presentation
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
-library(tidyverse)
-library(reshape2)
-library(cowplot)
-data <- read_tsv("donnees_centauree.csv")
+
 
 ```
 
@@ -153,6 +150,13 @@ hist(gathered_data$Rosette_size)
 
 #  scale_x_continuous(breaks = as.numeric(gathered_data$Date),
  #                    labels = format(gathered_data$Date, format = "%b")) +
+
+lm1 <- lm(Rosette_size~light+espece+pop+Cotyledons+Date, data = gathered_data)
+
+lm2 <- lm(Rosette_size~light, data = gathered_data)
+
+summary(lm2)
+plot(lm2)
 
 ```
 
