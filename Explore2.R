@@ -7,6 +7,7 @@ library(lme4)
 library(sjPlot)
 library(glmmTMB)
 library(performance)
+library(equatiomatic)
 library(tidyverse)
 
 # ---- Load data ----
@@ -138,7 +139,11 @@ ggsave(filename = "xtimeaftergerm_yRosette_facSpecTrait_GrpPop.png",
 nozero <- data_after_germ %>%
   mutate(Rosette_size = replace(Rosette_size, which(Rosette_size==0), NA))
 
-lmer1 <- lmer(Rosette_size~light*time_after_germ*espece+Cotyledons+(1|Plante)+(1|pop),
+nozero %>%
+  group_by(espece) %>%
+  count()
+
+lmer1 <- lmer(Rosette_size~light*espece*time_after_germ+Cotyledons+(1|Plante)+(1|pop),
               data = nozero)
 
 summary(lmer1)
@@ -156,7 +161,7 @@ plot_model(lmer2, type = "diag")
 
 # will try log transform to rosette_size to try improve fit to assumption of norm dist res
 
-lmer3 <- lmer(log(Rosette_size)~light*time_after_germ*espece+Cotyledons+(1|Plante),
+lmer3 <- lmer(log(Rosette_size)~light*espece*time_after_germ+Cotyledons+(1|Plante),
               data = nozero)
 
 summary(lmer3)
@@ -178,7 +183,64 @@ compare_performance(lmer4, lmer3) # lmer4 is much better
 lmer5 <- update(lmer4, .~. -time_after_germ:espece)
 summary(lmer5)
 plot_model(lmer5)
+
+ggsave(filename = "model5homo.png",
+       width = 7,
+       height = 5,
+       dpi = "retina")
 plot_model(lmer5, type = "diag")
+
+lmer5nolog <- lmer(Rosette_size ~ light + espece + time_after_germ + Cotyledons +  (1 | Plante) + light:espece + light:time_after_germ,
+     data = nozero)
+
+lmer5diag <- plot_model(lmer5, type = "diag")
+
+ggsave(filename = "logmodel5diag1.png",
+       plot = lmer5diag[[1]],
+       width = 7,
+       height = 5,
+       dpi = "retina")
+ggsave(filename = "logmodel5diag2.png",
+       plot = lmer5diag[[2]]$Plante,
+       width = 7,
+       height = 5,
+       dpi = "retina")
+ggsave(filename = "logmodel5diag3.png",
+       plot = lmer5diag[[3]],
+       width = 7,
+       height = 5,
+       dpi = "retina")
+ggsave(filename = "logmodel5diag4.png",
+       plot = lmer5diag[[4]],
+       width = 7,
+       height = 5,
+       dpi = "retina")
+
+lmer5nologdiag <- plot_model(lmer5nolog, type = "diag")
+
+ggsave(filename = "model5diag1.png",
+       plot = lmer5nologdiag[[1]],
+       width = 7,
+       height = 5,
+       dpi = "retina")
+ggsave(filename = "model5diag2.png",
+       plot = lmer5nologdiag[[2]]$Plante,
+       width = 7,
+       height = 5,
+       dpi = "retina")
+ggsave(filename = "model5diag3.png",
+       plot = lmer5nologdiag[[3]],
+       width = 7,
+       height = 5,
+       dpi = "retina")
+ggsave(filename = "model5diag4.png",
+       plot = lmer5nologdiag[[4]],
+       width = 7,
+       height = 5,
+       dpi = "retina")
+
+plot_model(lmer5, type = "diag")
+
 
 # interaction between light and time is tiny
 
@@ -208,10 +270,41 @@ plot_model(lmer8, type = "diag")
 compare_performance(lmer8, lmer7, lmer6, lmer5, lmer4, lmer3) # also worse, back to model 5
 
 summary(lmer5)
-plot_model(lmer5, type = "int")
+plot_model(lmer5)
+predint <- plot_model(lmer5, type = "int")
+
+predint[[1]]
+ggsave(filename = "predint.png",
+       width = 5,
+       height = 3,
+       dpi = "retina")
+
+
 plot_model(lmer5, type = "pred")
 
+
+
+testMOD <- lmer(log(Rosette_size)~time_after_germ*light*espece+Cotyledons+(1|Plante),
+     data = nozero)
+
+plot_model(testMOD)
+
+str(nozero)
+
+nozero$time_after_germ <- as.numeric(nozero$time_after_germ) # important
+
+hist(nozero$time_after_germ)
+
+lmerTEST <- lmer(log(Rosette_size)~espece*light*time_after_germ+Cotyledons+(1|Plante), data = nozero)
+plot_model(lmerTEST)
+plot_model(lmerTEST, type = "int")
+plot_model(lmerTEST, type = "pred")
+equatiomatic::extract_eq(lmTEST, wrap = TRUE)
+
+lmTEST <- lmer(Rosette_size~light*espece*time_after_germ+Cotyledons+(1|Plante), data = nozero)
+
 ggplot()
+
 
 
 
@@ -238,9 +331,12 @@ glmm2 <- glmmTMB(Rosette_size~light*espece*time_after_germ+(1|Plante),
         family = ziGamma(link = "log"),
         ziformula = ~1)
 
+summary(glmm2)
+
 AIC(glmm0,glmm1,glmm2)
 
 plot_model(glmm2, type = "pred")
+plot_model(glmm2, type = "diag")
 
 glmm00 <- glmmTMB(Rosette_size~traitement+espece+time_after_germ+(1|Plante),
                  data = withzeros,
