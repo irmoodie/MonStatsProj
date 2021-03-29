@@ -8,6 +8,7 @@ library(sjPlot)
 library(glmmTMB)
 library(performance)
 library(equatiomatic)
+library(ggeffects)
 library(tidyverse)
 
 # ---- Load data ----
@@ -119,6 +120,8 @@ d2 <- gathered_data %>%
 
 data_after_germ <- full_join(d1, d2)
 
+rm(d1,d2)
+
 ggplot(data = data_after_germ, aes(x = time_after_germ, y = Rosette_size, group = Plante, colour = pop)) +
   geom_line(alpha = 0.3) +
   geom_point(alpha = 0.1, size = 2) +
@@ -134,14 +137,380 @@ ggsave(filename = "xtimeaftergerm_yRosette_facSpecTrait_GrpPop.png",
        height = 6,
        width = 12)
 
+# ---- Modelling with max size ---- #
+
+maxdata <- data_after_germ %>%
+  group_by(Plante) %>%
+  filter(Rosette_size == max(Rosette_size)) %>%
+  filter(time_after_germ == max(time_after_germ)) # gets rid of duplicates and keeps oldest value
+
+maxdata<-maxdata %>%
+  mutate(comp = 1-light)
+
+maxdata <- maxdata %>%
+  filter(Rosette_size > 0)
+
+maxdata <- maxdata %>%
+  rename("Competition" = "comp",
+         "Light" = "light",
+         "Species" = "espece",
+         "Population" = "pop")
+
+ggplot(data = maxdata, aes(x = Competition, y = Rosette_size, colour = Population)) +
+  geom_point(alpha = 0.3, size = 4) +
+  #geom_smooth(method = "lm") +
+  facet_grid(~Species) +
+  labs(y = "Max rosette size achieved",
+       x = "Competition (0 - low, 1 - high)") +
+  theme(axis.text=element_text(size=12),
+        strip.text = element_text(size = 12),
+        axis.title=element_text(size=14,face="bold"))
+
+ggsave(filename = "maxgrowth.png",
+       dpi = "retina",
+       height = 6,
+       width = 12)
+
+maxdata %>%
+  group_by(espece, pop) %>%
+  count() # very unbalanced
+
+pairs(maxdata)
+
+hist(maxdata$Rosette_size)
+
+ggplot()
+
+# messing around with aov
+aov1<-aov(Rosette_size~espece:pop, data = maxdata)
+summary(aov1)
+TukeyHSD(aov1)
+
+lmer1 <- lmer(Rosette_size~Light*Species+Cotyledons+(1+Light|Species:Population), data = maxdata)
+summary(lmer1)
+
+
+
+deviance(lmer1)
+
+plot_model(lmer1, type = "diag")
+plot_model(lmer1, type = "re")
+plot_model(lmer1, type = "int")
+
+extract_eq(lmer1.5)
+
+
+maxdata$Species <- recode(maxdata$Species,mac = "a", cor = "b")
+lmer1.5 <- lmer(Rosette_size~Light*Species+Cotyledons+(1|Species:Population), data = maxdata)
+
+summary(lmer1.5)
+plot_model(lmer1.5, type = "resid")
+plot_model(lmer1.5, type = "int")
+
+AIC(lmer1, lmer1.5, lmer1.6, lmer2, lmer3, lmer4, lmer5, lmer6, lmer7)
+
+lmer1.6 <- lm(Rosette_size~Light*Species+Cotyledons, data = maxdata)
+summary(lmer1.6)
+plot_model(lmer1.6, type = "diag")
+plot_model(lmer1.6, type = "int")
+
+extract
+
+
+anova(lmer1.5, lmer1, dist = "Chi")
+anova(lmer1.5, lmer1.6, dist = "Chi")
+drop1(lmer1, test = "Chisq")
+
+# random effect can be removed
+
+lmer2 <- update(lmer1.6, .~. -Cotyledons)
+summary(lmer2)
+plot_model(lmer2)
+plot_model(lmer2, type = "diag")
+
+anova(lmer2, lmer1.6) # cotyledons should be kept in
+
+lmer3 <- update(lmer1.6, .~. -Light:Species)
+summary(lmer3)
+plot_model(lmer3)
+
+anova(lmer3, lmer1.6) # interaction between light and species can be removed
+
+lmer4 <- update(lmer3, .~. -Species)
+summary(lmer4)
+plot_model(lmer4)
+plot_model(lmer4, type = "pred")
+anova(lmer4, lmer3) # species is supported to be removed
+
+extract_eq(lmer4,show_distribution = TRUE, use_coefs = TRUE)
+
+lmer5 <- update(lmer4, .~. -Cotyledons)
+summary(lmer5)
+plot_model(lmer5)
+anova(lmer5, lmer4) # cotyledons should be kept still
+
+lmer6 <- update(lmer4, .~. -Light)
+summary(lmer6)
+plot_model(lmer6)
+anova(lmer6, lmer4) # light should be kept in
+
+lmer7 <- update(lmer5, .~. -Light)
+summary(lmer7)
+anova(lmer7, lmer4)
+
+
+
+lmtest <- lm(Rosette_size~Light*Cotyledons, data = maxdata)
+plot_model(lmtest, type = "int")
+anova(lmtest)
+summary(lmtest)
+
+lmtest2 <- lm(Rosette_size~Competition, data = maxdata)
+plot_model(lmtest2, type = "diag")
+anova(lmtest2)
+summary(lmtest2)
+
+
+plot_model(lmer4, type = "pred",terms = c("Light"),show.data = TRUE, dot.size = 2) +
+  xlim(0,1.08)
+plot_model(lmer4, type = "pred",terms = c("Cotyledons"),show.data = TRUE, dot.size = 2)
+
+lmer4pred <- ggpredict(lmer4, terms = "Light")
+lmerpred1 <- ggpredict(lmer4, terms = "Cotyledons")
+
+g1 <- ggplot(data = maxdata, aes(x = Light, y = Rosette_size)) +
+  geom_point(shape=21, fill = "black", size = 3, alpha = 0.3) +
+  geom_line(data = lmer4pred, aes(y = predicted, x = x), size = 1.5) +
+  geom_ribbon(data = lmer4pred, aes(y = predicted, x = x, ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  labs(y = "Maximum rosette size (mm)",
+       x = "Light (received PAR / reference PAR)") +
+  scale_x_continuous(expand = c(0, 0), limits = c(0,1.09)) + scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
+  annotate(geom="text", x=0.80, y=5, label="*Adjusted for Cotyledon = 9.40",
+             color="black") +
+  theme_cowplot()
+
+g2 <- ggplot(data = maxdata, aes(x = Cotyledons, y = Rosette_size)) +
+  geom_point(shape=21, fill = "black", size = 3, alpha = 0.3) +
+  geom_line(data = lmerpred1, aes(y = predicted, x = x), size = 1.5) +
+  geom_ribbon(data = lmerpred1, aes(y = predicted, x = x, ymin = conf.low, ymax = conf.high), alpha = 0.1) +
+  labs(y = "Maximum rosette size (mm)",
+       x = "Cotyledon size (mm)") +
+  scale_x_continuous(expand = c(0, 0), limits = c(0,26)) + scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
+  annotate(geom="text", x=20, y=5, label="*Adjusted for Light = 0.73",
+           color="black") +
+  theme_cowplot() +
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank())
+
+g1g2 <- grid.arrange(g1,g2, ncol = 2, nrow = 1)
+
+ggsave(filename = "test.png",
+       plot = g1g2,
+       dpi = "retina",
+       height = 5,
+       width = 10)
+
+lmer15pred <- ggpredict(lmer1.5, terms = c("Light", "Species"),type = "fixed")
+lmer15pred <- lmer15pred %>%
+  rename("Species" = "group")
+
+lmer15pred$Species <- recode_factor(lmer15pred$Species, mac = "C. maculosa", cor = "C. corymbosa")
+
+lmer151pred <- ggpredict(lmer1.5, terms = c("Cotyledons", "Species"),type = "fixed")
+lmer151pred <- lmer151pred %>%
+  rename("Species" = "group")
+
+lmer151pred$Species <- recode_factor(lmer151pred$Species, mac = "C. maculosa", cor = "C. corymbosa")
+
+maxdata1 <- maxdata
+maxdata1$Species <- recode_factor(maxdata1$Species, mac = "C. maculosa", cor = "C. corymbosa")
+
+
+#temp1 <- lmer15pred %>%
+ # filter(conf.low < 0) %>%
+  #mutate(conf.low = 0)
+
+#temp2 <- lmer15pred %>%
+ # filter(conf.low > 0)
+
+#lmer15pred <- full_join(temp1, temp2)
+
+#rm(temp1, temp2)
+
+g1 <- ggplot(data = maxdata1, aes(x = Light, y = Rosette_size)) +
+  geom_point(data = maxdata1 %>%
+               filter(Species == "a"), aes(x = Light, y = Rosette_size), size = 3, alpha = 0.3, colour = "#F8766D") +
+  geom_point(data = maxdata1 %>%
+               filter(Species == "b"), aes(x = Light, y = Rosette_size), size = 3, alpha = 0.3, colour = "#00BFC4") +
+  geom_line(data = lmer15pred, aes(y = predicted, x = x, colour = Species), size = 1.5) +
+  geom_ribbon(data = lmer15pred, aes(y = predicted, x = x, ymin = conf.low, ymax = conf.high, colour = Species, fill = Species), alpha = 0.1) +
+  labs(y = "Maximum rosette size (mm)",
+       x = "Light (received PAR / reference PAR)",
+       title = "A") +
+  scale_x_continuous(expand = c(0, 0), limits = c(0,1.09)) + scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
+  annotate(geom="text", x=0.80, y=5, label="*Adjusted for Cotyledon = 9.40",
+           color="black") +
+  theme_cowplot()+
+  theme(legend.position = "none")
+
+g2 <- ggplot(data = maxdata1, aes(x = Cotyledons, y = Rosette_size)) +
+  geom_point(data = maxdata1 %>%
+               filter(Species == "a"), aes(x = Cotyledons, y = Rosette_size), size = 3, alpha = 0.3, colour = "#F8766D") +
+  geom_point(data = maxdata1 %>%
+               filter(Species == "b"), aes(x = Cotyledons, y = Rosette_size), size = 3, alpha = 0.3, colour = "#00BFC4") +
+  geom_line(data = lmer151pred, aes(y = predicted, x = x, colour = Species), size = 1.5) +
+  geom_ribbon(data = lmer151pred, aes(y = predicted, x = x, ymin = conf.low, ymax = conf.high, colour = Species, fill = Species), alpha = 0.1) +
+  labs(y = "Maximum rosette size (mm)",
+       x = "Cotyledon size (mm)",
+       title = "B") +
+  scale_x_continuous(expand = c(0, 0), limits = c(0,26)) + scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
+  annotate(geom="text", x=21, y=5, label="*Adjusted for Light = 0.73",
+           color="black") +
+  theme_cowplot() +
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        legend.position = c(0.7,0.9),
+        legend.title = element_blank())
+
+g1g2 <- grid.arrange(g1,g2, ncol = 2, nrow = 1)
+
+ggsave(filename = "Figure2.png",
+       plot = g1g2,
+       dpi = "retina",
+       height = 5,
+       width = 10)
+
+
+# ---- Germ Data ----
+
+didnotgerm <- data %>%
+  filter(is.na(Date_de_germination)) %>%
+  mutate(Date_de_germination = 0)
+didgerm <- data %>%
+  filter(!is.na(Date_de_germination)) %>%
+  mutate(Date_de_germination = 1)
+
+binarydata <- full_join(didnotgerm, didgerm)
+
+binarydata<-binarydata %>%
+  mutate(light = PAR/reference)
+
+binarydata<-binarydata %>%
+  mutate(comp = 1-light)
+
+binarydata <- binarydata %>%
+  rename("Germination" = "Date_de_germination",
+         "Competition" = "comp",
+         "Light" = "light",
+         "Species" = "espece",
+         "Population" = "pop")
+
+binarydata %>%
+  group_by(Species) %>%
+  count()
+
+
+ggplot(data = binarydata, aes(y = Germination, x = Light, colour = Species)) +
+  geom_point(alpha = 0.1, size = 4)
+
+binarydata$Species <- recode(binarydata$Species,mac = "a", cor = "b")
+
+
+glmer1 <- glmer(Germination~Species*Light+(1|Species:Population), data = binarydata, family = "binomial")
+summary(glmer1)
+plot_model(glmer1, type = "re")
+
+model_performance(glmer1)
+
+
+pred <- data.frame(Species = levels(binarydata$Species))
+predict(glmer1, newdat = pred, type = "response")
+
+glmer1sim <- simulate(glmer1, 100000) %>%
+  colSums()
+
+hist(glmer1sim, breaks = 100)
+abline(v = 488, col = "red")
+
+glmer1sim %>%
+  colSums()
+
+binarydata$Germination %>%
+  sum()
+
+anova(glmer1)
+
+glmer1.5 <- glm(Germination~Species*Light, data = binarydata, family = "binomial")
+glmer1.5 <- lmer(Germination~Species*Light+(1|Species:Population), data = binarydata)
+
+glmer2 <- update(glmer1, .~. -Species:Light)
+summary(glmer2)
+
+glmer3 <- update(glmer2, .~. -Light)
+summary(glmer3)
+
+anova(glmer1, glmer2)
+
+model_performance(glmer1)
+model_performance(glmer1.5)
+model_performance(glmer2)
+model_performance(glmer3)
+
+extract_eq(glmer1.5, show_distribution = TRUE)
+
+plot_model(glmer1, type = "pred", terms = c("Light", "Species"), show.data = TRUE, dot.size = 4, ci.style = "bar") +
+  xlim(0,1.03)
+
+
+
+glmerpred <- ggpredict(glmer1, terms = c("Light [all]", "Species"),type = "fixed")
+
+glmerpred <- glmerpred %>%
+  rename("Species" = "group")
+
+glmerpred$Species <- recode_factor(glmerpred$Species, a = "C. maculosa", b = "C. corymbosa")
+
+ggplot(data = binarydata, aes(x = Light, y = Germination)) +
+  geom_point(data = binarydata %>%
+               filter(Species == "a"), aes(x = Light, y = Germination), size = 3, alpha = 0.1, colour = "#F8766D") +
+  geom_point(data = binarydata %>%
+               filter(Species == "b"), aes(x = Light, y = Germination), size = 3, alpha = 0.1, colour = "#00BFC4") +
+  geom_line(data = glmerpred, aes(y = predicted, x = x, colour = Species), size = 1.5) +
+  geom_ribbon(data = glmerpred, aes(y = predicted, x = x, ymin = conf.low, ymax = conf.high, colour = Species, fill = Species), alpha = 0.1) +
+  labs(y = "P(Germination)",
+       x = "Light (received PAR / reference PAR)") +
+ # scale_x_continuous(expand = c(0, 0), limits = c(0,1.09)) + scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
+  #annotate(geom="text", x=0.80, y=5, label="*Adjusted for Cotyledon = 9.40",
+   #        color="black") +
+  scale_x_continuous(breaks = c(0,0.25,0.5,0.75,1)) +
+  theme_cowplot() +
+  theme(legend.position = c(0.65,0.25),
+        legend.title = element_blank())
+
+ggsave(filename = "Figure1.png",
+       dpi = "retina",
+       height = 5,
+       width = 5)
+
 # ---- Modelling with 0 set to NA ----
 
 nozero <- data_after_germ %>%
   mutate(Rosette_size = replace(Rosette_size, which(Rosette_size==0), NA))
 
+ggplot(data = nozero, aes(x = time_after_germ, y = Rosette_size, group = Plante, colour = pop)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.1, size = 2) +
+  facet_grid(espece~traitement) +
+  labs(y = "Rosette size",
+       x = "Days after germination") +
+  theme(axis.text=element_text(size=12),
+        strip.text = element_text(size = 12),
+        axis.title=element_text(size=14,face="bold"))
+
 nozero %>%
   group_by(espece) %>%
   count()
+
 
 lmer1 <- lmer(Rosette_size~light*espece*time_after_germ+Cotyledons+(1|Plante)+(1|pop),
               data = nozero)

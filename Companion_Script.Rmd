@@ -1,0 +1,194 @@
+---
+title: "Centaurea Project"
+author: "DG, IM, BS"
+date: "29/03/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This is the Rmarkdown file for the Centaurea project containing the code required to replicate the analysis and the plots.
+
+We begin by loading the required packages for the rest of the script.
+
+```{r library, message = FALSE}
+library(ggeffects)
+library(gridExtra)
+library(cowplot)
+library(lme4)
+library(tidyverse)
+
+```
+
+Next, we load in our dataset.
+
+```{r data, message = FALSE}
+data <- read_tsv("donnees_centauree.csv")
+
+data <- data %>%
+    mutate(light = PAR/reference) %>%
+    rename("species" = "espece",
+           "population" = "pop")
+
+data$species <- factor(data$species, levels = c("mac", "cor"))
+
+head(data)
+```
+
+We will now split the dataset into two part. The first part will be used to model the probability of germination, and the second part will be used to model the rosette size growth.
+
+```{r datasplit, message=FALSE}
+
+didnotgerm <- data %>%
+  filter(is.na(Date_de_germination)) %>%
+  mutate(Date_de_germination = 0)
+
+didgerm <- data %>%
+  filter(!is.na(Date_de_germination)) %>%
+  mutate(Date_de_germination = 1)
+
+germ_data <- full_join(didnotgerm, didgerm) %>%
+  rename("germination" = "Date_de_germination") %>%
+  select(-c(Cotyledons:reference))
+
+rm(didnotgerm, didgerm)
+
+head(germ_data)
+
+rosette_data <- data %>%
+  gather(key = "Date", 
+         value = "Rosette_size", 
+         "Taille_Dec_05":"Taille_Sept_06") %>%
+  select(-Date_de_germination, -c(traitement:reference), -Date) %>%
+  group_by(Plante) %>%
+  filter(Rosette_size == max(Rosette_size),
+         Rosette_size > 0) %>%
+  distinct(Plante, .keep_all = TRUE)
+  
+rm(data)
+
+head(rosette_data)
+  
+```
+
+Now, we will build and plot the germination model (we only show the final model selected).
+
+```{r germ_mod, fig.align='center', fig.width=5, fig.height=5}
+
+germ_mod <- glmer(germination~species*light+(1|species:population), data = germ_data, family = "binomial")
+
+summary(germ_mod)
+
+germ_pred <- ggpredict(germ_mod, terms = c("light [all]", "species"), type = "fixed") %>%
+  rename("species" = "group")
+
+germ_pred$species <- recode_factor(germ_pred$species, mac = "C. maculosa", cor = "C. corymbosa")
+
+ggplot(data = germ_data,
+       aes(x = light, y = germination)) +
+  geom_point(data = germ_data %>%
+               filter(species == "mac"),
+             aes(x = light, y = germination),
+             size = 3, alpha = 0.1, colour = "#F8766D") +
+  geom_point(data = germ_data %>%
+               filter(species == "cor"),
+             aes(x = light, y = germination),
+             size = 3, alpha = 0.1, colour = "#00BFC4") +
+  geom_line(data = germ_pred,
+            aes(y = predicted, x = x, colour = species),
+            size = 1.5) +
+  geom_ribbon(data = germ_pred, 
+              aes(y = predicted, x = x, ymin = conf.low, ymax = conf.high, colour = species, fill = species),
+              alpha = 0.1) +
+  labs(y = "P(Germination)",
+       x = "Light (received PAR / reference PAR)") +
+  scale_x_continuous(breaks = c(0,0.25,0.5,0.75,1)) +
+  theme_cowplot() +
+  theme(legend.position = c(0.65,0.25),
+        legend.title = element_blank())
+
+rm(germ_pred, germ_mod)
+```
+
+And finally, we build and plot the model for rosette size.
+
+```{r rosette_mod, fig.align='center',fig.width=10, message=FALSE, warning=FALSE}
+
+rosette_mod <- lmer(Rosette_size~light*species+Cotyledons+(1|species:population), data = rosette_data)
+summary(rosette_mod)
+
+rosette_pred1 <- ggpredict(rosette_mod, terms = c("light", "species"),type = "fixed") %>%
+  rename("species" = "group")
+
+rosette_pred2 <- ggpredict(rosette_mod, terms = c("Cotyledons", "species"),type = "fixed") %>%
+  rename("species" = "group")
+
+rosette_pred1$species <- recode_factor(rosette_pred1$species, mac = "C. maculosa", cor = "C. corymbosa")
+rosette_pred2$species <- recode_factor(rosette_pred2$species, mac = "C. maculosa", cor = "C. corymbosa")
+
+A <- ggplot(data = rosette_data,
+             aes(x = light, y = Rosette_size)) +
+  geom_point(data = rosette_data %>%
+               filter(species == "mac"),
+             aes(x = light, y = Rosette_size),
+             size = 3, alpha = 0.3, colour = "#F8766D") +
+  geom_point(data = rosette_data %>%
+               filter(species == "cor"),
+             aes(x = light, y = Rosette_size),
+             size = 3, alpha = 0.3, colour = "#00BFC4") +
+  geom_line(data = rosette_pred1,
+            aes(y = predicted, x = x, colour = species),
+            size = 1.5) +
+  geom_ribbon(data = rosette_pred1,
+              aes(y = predicted, x = x, ymin = conf.low, ymax = conf.high, colour = species, fill = species),
+              alpha = 0.1) +
+  labs(y = "Maximum rosette size (mm)",
+       x = "Light (received PAR / reference PAR)",
+       title = "A") +
+  scale_x_continuous(expand = c(0, 0), limits = c(0,1.09)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
+  annotate(geom="text",
+           x=0.80, y=5,
+           label="*Adjusted for Cotyledon = 9.40",
+           color="black") +
+  theme_cowplot()+
+  theme(legend.position = "none")
+
+B <- ggplot(data = rosette_data,
+             aes(x = Cotyledons, y = Rosette_size)) +
+  geom_point(data = rosette_data %>%
+               filter(species == "mac"),
+             aes(x = Cotyledons, y = Rosette_size),
+             size = 3, alpha = 0.3, colour = "#F8766D") +
+  geom_point(data = rosette_data %>%
+               filter(species == "cor"),
+             aes(x = Cotyledons, y = Rosette_size),
+             size = 3, alpha = 0.3, colour = "#00BFC4") +
+  geom_line(data = rosette_pred2,
+            aes(y = predicted, x = x, colour = species),
+            size = 1.5) +
+  geom_ribbon(data = rosette_pred2,
+              aes(y = predicted, x = x, ymin = conf.low, ymax = conf.high, colour = species, fill = species),
+              alpha = 0.1) +
+  labs(y = "Maximum rosette size (mm)",
+       x = "Cotyledon size (mm)",
+       title = "B") +
+  scale_x_continuous(expand = c(0, 0), limits = c(0,26)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
+  annotate(geom="text",
+           x=21, y=5, 
+           label="*Adjusted for Light = 0.73",
+           color="black") +
+  theme_cowplot() +
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        legend.position = c(0.7,0.9),
+        legend.title = element_blank())
+
+grid.arrange(A,B, ncol = 2, nrow = 1)
+
+rm(A, B, rosette_mod, rosette_pred1, rosette_pred2)
+```
+
