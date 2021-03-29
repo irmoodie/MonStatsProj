@@ -9,6 +9,7 @@ library(glmmTMB)
 library(performance)
 library(equatiomatic)
 library(ggeffects)
+library(cowplot)
 library(tidyverse)
 
 # ---- Load data ----
@@ -105,6 +106,8 @@ ggsave(filename = "xTraitement_yRosette_facSpecDate_GrpPop.png",
        dpi = "retina",
        height = 6,
        width = 12)
+
+
 
 # ---- Time after germinations ----
 # Maybe it is more informative to look at time after germination, not measurement date
@@ -214,7 +217,7 @@ summary(lmer1.6)
 plot_model(lmer1.6, type = "diag")
 plot_model(lmer1.6, type = "int")
 
-extract
+extract_eq(lmer1.5, use_coefs = FALSE)
 
 
 anova(lmer1.5, lmer1, dist = "Chi")
