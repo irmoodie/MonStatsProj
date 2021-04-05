@@ -58,14 +58,26 @@ rm(didnotgerm, didgerm)
 head(germ_data)
 
 rosette_data <- data %>%
+    rename("2005-12-01" = "Taille_Dec_05",
+         "2006-02-01" = "Taille_Fev_06",
+         "2006-03-01" = "Taille_Mars_06",
+         "2006-06-01" = "Taille_Juin_06",
+         "2006-09-01" = "Taille_Sept_06") %>%
   gather(key = "Date", 
          value = "Rosette_size", 
-         "Taille_Dec_05":"Taille_Sept_06") %>%
-  select(-Date_de_germination, -c(traitement:reference), -Date) %>%
+         "2005-12-01":"2006-09-01") %>%
+  select(-c(traitement:reference)) %>%
   group_by(Plante) %>%
   filter(Rosette_size == max(Rosette_size),
          Rosette_size > 0) %>%
   distinct(Plante, .keep_all = TRUE)
+
+rosette_data$Date_de_germination <- as.Date(rosette_data$Date_de_germination, format = "%d/%m/%Y")
+rosette_data$Date <- as.Date(rosette_data$Date, format = "%Y-%m-%d")
+
+rosette_data <- rosette_data %>%
+  mutate(time_after_germ = difftime(Date, Date_de_germination, units = "days")) %>%
+  filter(time_after_germ > 0)
   
 rm(data)
 
@@ -77,7 +89,7 @@ Now, we will build and plot the germination model (we only show the final model 
 
 ```{r germ_mod, fig.align='center', fig.width=5, fig.height=5}
 
-germ_mod <- glmer(germination~species*light+(1|species:population), data = germ_data, family = "binomial")
+germ_mod <- glmer(germination~light*species+(1|species:population), data = germ_data, family = "binomial")
 
 summary(germ_mod)
 
@@ -114,9 +126,9 @@ rm(germ_pred, germ_mod)
 
 And finally, we build and plot the model for rosette size.
 
-```{r rosette_mod, fig.align='center',fig.width=10, message=FALSE, warning=FALSE}
+```{r rosette_mod, fig.align='center',fig.width=15, message=FALSE, warning=FALSE}
 
-rosette_mod <- lmer(Rosette_size~light*species+Cotyledons+(1|species:population), data = rosette_data)
+rosette_mod <- lmer(Rosette_size~light*species*time_after_germ+Cotyledons+(1+species|population), data = rosette_data)
 summary(rosette_mod)
 
 rosette_pred1 <- ggpredict(rosette_mod, terms = c("light", "species"),type = "fixed") %>%
@@ -125,8 +137,12 @@ rosette_pred1 <- ggpredict(rosette_mod, terms = c("light", "species"),type = "fi
 rosette_pred2 <- ggpredict(rosette_mod, terms = c("Cotyledons", "species"),type = "fixed") %>%
   rename("species" = "group")
 
+rosette_pred3 <- ggpredict(rosette_mod, terms = c("time_after_germ", "species"),type = "fixed") %>%
+  rename("species" = "group")
+
 rosette_pred1$species <- recode_factor(rosette_pred1$species, mac = "C. maculosa", cor = "C. corymbosa")
 rosette_pred2$species <- recode_factor(rosette_pred2$species, mac = "C. maculosa", cor = "C. corymbosa")
+rosette_pred3$species <- recode_factor(rosette_pred3$species, mac = "C. maculosa", cor = "C. corymbosa")
 
 A <- ggplot(data = rosette_data,
              aes(x = light, y = Rosette_size)) +
@@ -149,10 +165,6 @@ A <- ggplot(data = rosette_data,
        title = "A") +
   scale_x_continuous(expand = c(0, 0), limits = c(0,1.09)) + 
   scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
-  annotate(geom="text",
-           x=0.80, y=5,
-           label="*Adjusted for Cotyledon = 9.40",
-           color="black") +
   theme_cowplot()+
   theme(legend.position = "none")
 
@@ -177,18 +189,41 @@ B <- ggplot(data = rosette_data,
        title = "B") +
   scale_x_continuous(expand = c(0, 0), limits = c(0,26)) + 
   scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
-  annotate(geom="text",
-           x=21, y=5, 
-           label="*Adjusted for Light = 0.73",
-           color="black") +
   theme_cowplot() +
   theme(axis.title.y=element_blank(),
         axis.text.y=element_blank(),
-        legend.position = c(0.7,0.9),
+        legend.position = "none",
         legend.title = element_blank())
 
-grid.arrange(A,B, ncol = 2, nrow = 1)
+C <- ggplot(data = rosette_data,
+             aes(x = time_after_germ, y = Rosette_size)) +
+  geom_point(data = rosette_data %>%
+               filter(species == "mac"),
+             aes(x = time_after_germ, y = Rosette_size),
+             size = 3, alpha = 0.3, colour = "#F8766D") +
+  geom_point(data = rosette_data %>%
+               filter(species == "cor"),
+             aes(x = time_after_germ, y = Rosette_size),
+             size = 3, alpha = 0.3, colour = "#00BFC4") +
+  geom_line(data = rosette_pred3,
+            aes(y = predicted, x = x, colour = species),
+            size = 1.5) +
+  geom_ribbon(data = rosette_pred3,
+              aes(y = predicted, x = x, ymin = conf.low, ymax = conf.high, colour = species, fill = species),
+              alpha = 0.1) +
+  labs(y = "Maximum rosette size (mm)",
+       x = "Time after germination (days)",
+       title = "C") +
+  scale_x_continuous(expand = c(0, 0), limits = c(0,325)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
+  theme_cowplot() +
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        legend.position = c(0.1,0.9),
+        legend.title = element_blank())
 
-rm(A, B, rosette_mod, rosette_pred1, rosette_pred2)
+grid.arrange(A,B,C, ncol = 3, nrow = 1)
+
+rm(A, B, C, rosette_mod, rosette_pred1, rosette_pred2, rosette_pred3)
 ```
 
