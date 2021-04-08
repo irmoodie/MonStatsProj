@@ -126,11 +126,16 @@ rm(germ_pred, germ_mod)
 
 And finally, we build and plot the model for rosette size.
 
-```{r rosette_mod, fig.align='center',fig.width=15, message=FALSE, warning=FALSE}
+```{r rosette_mod}
 
-rosette_mod <- lmer(Rosette_size~light*species*time_after_germ+Cotyledons+(1+species|population), data = rosette_data)
-summary(rosette_mod)
+rosette_mod <- lmer(Rosette_size~light+species+time_after_germ+light:species+light:time_after_germ+Cotyledons+(1+species|population), data = rosette_data)
 
+rosette_mod1 <- lm(Rosette_size~light+species+time_after_germ+light:species+light:time_after_germ+Cotyledons, data = rosette_data)
+summary(rosette_mod1)
+
+```
+
+```{r figures_rosette, fig.align='center',fig.width=15, message=FALSE, warning=FALSE}
 rosette_pred1 <- ggpredict(rosette_mod, terms = c("light", "species"),type = "fixed") %>%
   rename("species" = "group")
 
