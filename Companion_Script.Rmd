@@ -18,6 +18,7 @@ library(ggeffects)
 library(gridExtra)
 library(cowplot)
 library(lme4)
+library(MuMIn)
 library(tidyverse)
 
 ```
@@ -134,24 +135,51 @@ lm1 <- lm(Rosette_size~light*species*Cotyledons*time_after_germ, data = rosette_
 summary(lm1)
 lm2 <- update(lm1, .~. -light:species:Cotyledons:time_after_germ) # remove 4 way int
 summary(lm2)
+anova(lm1, lm2)
 lm3 <- update(lm2, .~. -species:Cotyledons:time_after_germ) # remove non sig 3 way int
 summary(lm3)
+anova(lm2, lm3)
 lm4 <- update(lm3, .~. -light:Cotyledons:time_after_germ) # remove non sig 3 way
 summary(lm4)
+anova(lm3,lm4)
 lm5 <- update(lm4, .~. -light:species:Cotyledons)
 summary(lm5)
+anova(lm4,lm5)
 lm6 <- update(lm5, .~. -Cotyledons:time_after_germ)
 summary(lm6)
+anova(lm5,lm6)
 lm7 <- update(lm6, .~. -species:time_after_germ)
 summary(lm7)
+anova(lm6,lm7)
 lm8 <- update(lm7, .~. -species:Cotyledons)
 summary(lm8)
+anova(lm7,lm8)
 lm9 <- update(lm8, .~. -light:Cotyledons)
-summary(lm9) # min. ad. mod.
+summary(lm9) 
+anova(lm8,lm9) # min. ad. mod.
+
+lm10<-update(lm9, .~. -light:species:time_after_germ)
+anova(lm9,lm10) # supported to be kept in
 
 plot(lm9)
 
-rm(lm1,lm2,lm3,lm4,lm5,lm6,lm7,lm8)
+# random effect structure
+
+re1 <- lmer(Rosette_size ~ light + species + Cotyledons + time_after_germ + 
+    light:species + light:time_after_germ + light:species:time_after_germ+(1+species|population), 
+    data = rosette_data)
+
+re2 <- lmer(Rosette_size ~ light + species + Cotyledons + time_after_germ + 
+    light:species + light:time_after_germ + light:species:time_after_germ+(0+species|population), 
+    data = rosette_data)
+
+re3 <- lmer(Rosette_size ~ light + species + Cotyledons + time_after_germ + 
+    light:species + light:time_after_germ + light:species:time_after_germ+(1|population), 
+    data = rosette_data)
+
+AICc(lm9, re3, re2, re1)
+
+rm(lm1,lm2,lm3,lm4,lm5,lm6,lm7,lm8, lm10, re1, re2, re3)
 
 ```
 
