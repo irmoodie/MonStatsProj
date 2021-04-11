@@ -19,6 +19,7 @@ library(gridExtra)
 library(cowplot)
 library(lme4)
 library(MuMIn)
+library(sjPlot)
 library(tidyverse)
 
 ```
@@ -44,15 +45,14 @@ We will now split the dataset into two part. The first part will be used to mode
 
 didnotgerm <- data %>%
   filter(is.na(Date_de_germination)) %>%
-  mutate(Date_de_germination = 0)
+  mutate(germination = 0)
 
 didgerm <- data %>%
   filter(!is.na(Date_de_germination)) %>%
-  mutate(Date_de_germination = 1)
+  mutate(germination = 1)
 
 germ_data <- full_join(didnotgerm, didgerm) %>%
-  rename("germination" = "Date_de_germination") %>%
-  select(-c(Cotyledons:reference))
+  select(-c(Date_de_germination:reference))
 
 rm(didnotgerm, didgerm)
 
@@ -88,13 +88,28 @@ head(rosette_data)
   
 ```
 
-Now, we will build and plot the germination model (we only show the final model selected).
+Now, we will build and plot the germination model.
 
 ```{r germ_mod, fig.align='center', fig.width=5, fig.height=5}
 
-germ_mod <- glmer(germination~light*species+(1|species:population), data = germ_data, family = "binomial")
+germ_mod1 <- glmer(germination~light*species+(1+species|population), data = germ_data, family = "binomial")
+germ_mod2 <- glmer(germination~light*species+(1|population), data = germ_data, family = "binomial")
+germ_mod3 <- glm(germination~light*species, data = germ_data, family = "binomial")
 
-summary(germ_mod)
+anova(germ_mod1, germ_mod2) # (1+species|population) not sig better
+anova(germ_mod2, germ_mod3) # however including (1|population) is supported
+
+summary(germ_mod2) # all terms are sig
+
+germ_mod4 <- update(germ_mod2, .~. -light:species)
+anova(germ_mod2, germ_mod4)
+
+AICc(germ_mod1, germ_mod2, germ_mod3, germ_mod4)
+logLik(germ_mod4)
+
+germ_mod <- germ_mod2
+
+rm(germ_mod1, germ_mod2, germ_mod3, germ_mod4)
 
 germ_pred <- ggpredict(germ_mod, terms = c("light [all]", "species"), type = "fixed") %>%
   rename("species" = "group")
@@ -131,66 +146,143 @@ And finally, we build and plot the model for rosette size.
 
 ```{r rosette_mod}
 
-lm1 <- lm(Rosette_size~light*species*Cotyledons*time_after_germ, data = rosette_data)
-summary(lm1)
-lm2 <- update(lm1, .~. -light:species:Cotyledons:time_after_germ) # remove 4 way int
-summary(lm2)
-anova(lm1, lm2)
-lm3 <- update(lm2, .~. -species:Cotyledons:time_after_germ) # remove non sig 3 way int
-summary(lm3)
-anova(lm2, lm3)
-lm4 <- update(lm3, .~. -light:Cotyledons:time_after_germ) # remove non sig 3 way
-summary(lm4)
-anova(lm3,lm4)
-lm5 <- update(lm4, .~. -light:species:Cotyledons)
-summary(lm5)
-anova(lm4,lm5)
-lm6 <- update(lm5, .~. -Cotyledons:time_after_germ)
-summary(lm6)
-anova(lm5,lm6)
-lm7 <- update(lm6, .~. -species:time_after_germ)
-summary(lm7)
-anova(lm6,lm7)
-lm8 <- update(lm7, .~. -species:Cotyledons)
-summary(lm8)
-anova(lm7,lm8)
-lm9 <- update(lm8, .~. -light:Cotyledons)
-summary(lm9) 
-anova(lm8,lm9) # min. ad. mod.
+rosette_mod1 <- lmer(Rosette_size ~ light*species*Cotyledons*time_after_germ+(1+species|population),
+                     data = rosette_data)
 
-lm10<-update(lm9, .~. -light:species:time_after_germ)
-anova(lm9,lm10) # supported to be kept in
+rosette_mod2 <- lmer(Rosette_size ~ light*species*Cotyledons*time_after_germ+(1|population),
+                     data = rosette_data)
 
-plot(lm9)
+rosette_mod3 <- lm(Rosette_size~light*species*Cotyledons*time_after_germ,
+                   data = rosette_data)
 
-# random effect structure
+anova(rosette_mod1, rosette_mod2) # no difference in L.ratio, AIC support simpler model
+anova(rosette_mod2, rosette_mod3) # no difference in L.ratio again, and AIC would marginally support simpler model
+# going with simpler = better if both explain the data just as well, we will move on with a lm
+
+rosette_mod4 <- lm(Rosette_size~light*species*Cotyledons*time_after_germ, data = rosette_data)
+summary(rosette_mod4)
+
+rosette_mod5 <- update(rosette_mod4, .~. -light:species:Cotyledons:time_after_germ) # try remove 4 way int
+anova(rosette_mod4, rosette_mod5) # removal is supported by lrt
+summary(rosette_mod5)
+
+rosette_mod6 <- update(rosette_mod5, .~. -species:Cotyledons:time_after_germ) # try remove non sig 3 way int
+anova(rosette_mod5, rosette_mod6) # removal supported by lrt
+summary(rosette_mod6)
+
+rosette_mod7 <- update(rosette_mod6, .~. -light:Cotyledons:time_after_germ) # remove non sig 3 way int
+anova(rosette_mod6,rosette_mod7) # removal supported by lrt
+summary(rosette_mod7)
+
+rosette_mod8 <- update(rosette_mod7, .~. -light:species:Cotyledons) # remove non sig 3 way int
+anova(rosette_mod7,rosette_mod8) # removal supported by lrt
+summary(rosette_mod8)
+
+rosette_mod9 <- update(rosette_mod8, .~. -Cotyledons:time_after_germ) # remove non sig int
+anova(rosette_mod8,rosette_mod9) # removal supported by lrt
+summary(rosette_mod9)
+
+rosette_mod10 <- update(rosette_mod9, .~. -species:time_after_germ)
+anova(rosette_mod9,rosette_mod10) # removal supported by lrt
+summary(rosette_mod10)
+
+rosette_mod11 <- update(rosette_mod10, .~. -species:Cotyledons) # remove non sig int
+anova(rosette_mod10,rosette_mod11) # removal supported by lrt
+summary(rosette_mod11)
+
+rosette_mod12 <- update(rosette_mod11, .~. -light:Cotyledons) # remove marg. sig. int
+anova(rosette_mod11,rosette_mod12) # removal supported marginally
+summary(rosette_mod12) # all terms sig or are included in sig ints
+
+rosette_mod13 <- update(rosette_mod12, .~. -light:species:time_after_germ)
+anova(rosette_mod12, rosette_mod13) # supported to be kept in
+
+rosette_mod14 <- update(rosette_mod12, .~. -light:species)
+anova(rosette_mod12, rosette_mod14) # supported to be kept in
+
+rosette_mod <- rosette_mod12 
+
+plot_model(rosette_mod, type = "diag")
+
+mod_list <- paste0("rosette_mod",1:14)
+Akaike <- NULL
+LL <- NULL
+
+for ( i in 1:length(mod_list)){
+Akaike[i] = AICc(get(mod_list[i]),k = 2)
+LL[i] = logLik(get(mod_list[i]))
+}
+
+mod_sum <- data.frame(mod_list, Akaike, LL)
+mod_sum
+
+# recheck random effect structure with min. ad. mod
 
 re1 <- lmer(Rosette_size ~ light + species + Cotyledons + time_after_germ + 
     light:species + light:time_after_germ + light:species:time_after_germ+(1+species|population), 
     data = rosette_data)
 
-re2 <- lmer(Rosette_size ~ light + species + Cotyledons + time_after_germ + 
-    light:species + light:time_after_germ + light:species:time_after_germ+(0+species|population), 
-    data = rosette_data)
 
-re3 <- lmer(Rosette_size ~ light + species + Cotyledons + time_after_germ + 
+re2 <- lmer(Rosette_size ~ light + species + Cotyledons + time_after_germ + 
     light:species + light:time_after_germ + light:species:time_after_germ+(1|population), 
     data = rosette_data)
 
-AICc(lm9, re3, re2, re1)
+anova(re1, re2)
+anova(re2, rosette_mod) # still not worth including
 
-rm(lm1,lm2,lm3,lm4,lm5,lm6,lm7,lm8, lm10, re1, re2, re3)
+
+
+samp_test <- data.frame(matrix(nrow = 8))
+
+byspe <- rosette_data %>%
+  group_by(species)
+
+for (i in 1:1000) {
+  samp <- sample_n(byspe, 100)
+lm_samp <- lm(Rosette_size ~ light + species + Cotyledons + time_after_germ + 
+    light:species + light:time_after_germ + light:species:time_after_germ, data = samp)
+
+samp_test <- cbind(samp_test, lm_samp$coefficients)
+  
+}
+
+samp <- sample_n(byspe, 113)
+lm_samp <- lm(Rosette_size ~ light + species + Cotyledons + time_after_germ + 
+    light:species + light:time_after_germ + light:species:time_after_germ, data = samp)
+
+samp_test <- cbind(samp_test, lm_samp$coefficients)
+
+colnames(samp_test) <- paste0("Model",1:ncol(samp_test))
+
+samp_test <- samp_test %>%
+  select(-Model1)
+
+samples <- as.data.frame(t(samp_test))
+
+summary(samples)
+
+hist(samples$`(Intercept)`)
+hist(samples$light)
+hist(samples$speciescor)
+hist(samples$Cotyledons)
+hist(samples$time_after_germ)
+hist(samples$`light:speciescor`)
+hist(samples$`light:time_after_germ`)
+hist(samples$`light:speciescor:time_after_germ`)
+
+rm(list = mod_list)
+rm(re1, re2, mod_list, Akaike, i, LL, samp, samp_test, samples)
 
 ```
 
-```{r figures_rosette, fig.align='center',fig.width=15, message=FALSE, warning=FALSE}
-rosette_pred1 <- ggpredict(lm9, terms = c("light", "species"),type = "fixed") %>%
+```{r figures_rosette, fig.align='center',fig.width=12, fig.height=8, message=FALSE, warning=FALSE}
+rosette_pred1 <- ggpredict(rosette_mod, terms = c("light", "species"),type = "fixed") %>%
   rename("species" = "group")
 
-rosette_pred2 <- ggpredict(lm9, terms = c("Cotyledons", "species"),type = "fixed") %>%
+rosette_pred2 <- ggpredict(rosette_mod, terms = c("Cotyledons", "species"),type = "fixed") %>%
   rename("species" = "group")
 
-rosette_pred3 <- ggpredict(lm9, terms = c("time_after_germ", "species"),type = "fixed") %>%
+rosette_pred3 <- ggpredict(rosette_mod, terms = c("time_after_germ", "species"),type = "fixed") %>%
   rename("species" = "group")
 
 rosette_pred1$species <- recode_factor(rosette_pred1$species, mac = "C. maculosa", cor = "C. corymbosa")
@@ -202,11 +294,11 @@ A <- ggplot(data = rosette_data,
   geom_point(data = rosette_data %>%
                filter(species == "mac"),
              aes(x = light, y = Rosette_size),
-             size = 3, alpha = 0.3, colour = "#F8766D") +
+             size = 4, alpha = 0.3, colour = "#F8766D") +
   geom_point(data = rosette_data %>%
                filter(species == "cor"),
              aes(x = light, y = Rosette_size),
-             size = 3, alpha = 0.3, colour = "#00BFC4") +
+             size = 4, alpha = 0.3, colour = "#00BFC4") +
   geom_line(data = rosette_pred1,
             aes(y = predicted, x = x, colour = species),
             size = 1.5) +
@@ -244,7 +336,7 @@ B <- ggplot(data = rosette_data,
   scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
   theme_cowplot() +
   theme(axis.title.y=element_blank(),
-        axis.text.y=element_blank(),
+       # axis.text.y=element_blank(),
         legend.position = "none",
         legend.title = element_blank())
 
@@ -271,12 +363,20 @@ C <- ggplot(data = rosette_data,
   scale_y_continuous(expand = c(0, 0), limits = c(0,150)) +
   theme_cowplot() +
   theme(axis.title.y=element_blank(),
-        axis.text.y=element_blank(),
-        legend.position = c(0.1,0.9),
+        legend.position = c(0.05,0.9),
         legend.title = element_blank())
 
-grid.arrange(A,B,C, ncol = 3, nrow = 1)
+layout <- rbind(c(1,1,2),
+                c(1,1,3))
 
-rm(A, B, C, rosette_mod, rosette_pred1, rosette_pred2, rosette_pred3)
+ABC <- grid.arrange(A,B,C, layout_matrix=layout)
+
+ggsave(filename="ABC.png",
+       plot = ABC,
+       dpi = "retina",
+       width = 12,
+       height = 8)
+
+rm(A, B, C, ABC, rosette_mod, rosette_pred1, rosette_pred2, rosette_pred3)
 ```
 
