@@ -2,7 +2,9 @@
 title: "Centaurea Project"
 author: "DG, IM, BS"
 date: "29/03/2021"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -116,7 +118,7 @@ germ_pred <- ggpredict(germ_mod, terms = c("light [all]", "species"), type = "fi
 
 germ_pred$species <- recode_factor(germ_pred$species, mac = "C. maculosa", cor = "C. corymbosa")
 
-ggplot(data = germ_data,
+germplot <- ggplot(data = germ_data,
        aes(x = light, y = germination)) +
   geom_point(data = germ_data %>%
                filter(species == "mac"),
@@ -139,7 +141,15 @@ ggplot(data = germ_data,
   theme(legend.position = c(0.65,0.25),
         legend.title = element_blank())
 
-rm(germ_pred, germ_mod)
+ggsave(filename = "Figure2.png",
+       plot = germplot,
+       dpi = 600,
+       width = 5,
+       height = 5,
+       type="cairo-png"
+       )
+
+rm(germ_pred, germ_mod, germplot)
 ```
 
 And finally, we build and plot the model for rosette size.
@@ -371,11 +381,12 @@ layout <- rbind(c(1,1,2),
 
 ABC <- grid.arrange(A,B,C, layout_matrix=layout)
 
-ggsave(filename="ABC.png",
+ggsave(filename="Figure1.png",
        plot = ABC,
-       dpi = "retina",
+       dpi = 600,
        width = 12,
-       height = 8)
+       height = 8,
+       type="cairo-png")
 
 rm(A, B, C, ABC, rosette_mod, rosette_pred1, rosette_pred2, rosette_pred3)
 ```
